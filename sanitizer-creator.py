@@ -12,6 +12,8 @@ settingsTemplate = {
     "selectedSanitizerScript": ""
 }
 parameterWidgets = []
+settingsWin = None
+previewWin = None
 
 # GETTERS & SETTERS
 def getSaveData():
@@ -20,7 +22,12 @@ def getSaveData():
             data = json.load(f)
         return data
     except (KeyError, json.JSONDecodeError) as e:
-        print("Caught a JSON Exception, resetting settings...\n"+e)
+        print("Caught a JSON Exception, resetting settings...\n"+str(e))
+        with open('settings.json', 'w') as f:
+            data = json.dump(settingsTemplate, f, indent=4)
+        with open('settings.json', 'r') as f:
+            data = json.load(f)
+        return data
 
 def setSaveData(k, v):
     saveData = getSaveData()
@@ -31,7 +38,7 @@ def setSaveData(k, v):
 
 def setSanitizerParams(fp):
     if not os.path.exists(fp): return
-    filenameLabel.configure(text=fp.split('/')[-1])
+    filenameLabelButton.configure(text=fp.split('/')[-1])
     clearParameterEntries()
     with open(fp, 'r') as f:
         for line in f.readlines():
@@ -43,9 +50,20 @@ def getSanitizerParams():
     for parameterWidget in parameterWidgets:
         inputEntry = parameterWidget[0].get()
         outputEntry = parameterWidget[1].get()
-        if inputEntry.strip() != "" and outputEntry.strip() != "":
+        if inputEntry.strip() != "":
             SANITIZER_FILE_CONTENT += inputEntry + "->" + outputEntry + "\n"
-    return SANITIZER_FILE_CONTENT
+    return SANITIZER_FILE_CONTENT.strip()
+
+def setScriptsFolder():
+    saveData = getSaveData()
+    initDir = saveData["sanitizerScriptsLocation"].strip()
+    if initDir == "": initDir = os.getcwd()
+    folderLocation = filedialog.askdirectory(initialdir = initDir, title = "Select a Folder to Store Your Generated Scripts")
+    if folderLocation.strip() == "": return
+    setSaveData("sanitizerScriptsLocation", folderLocation)
+    messagebox.showinfo(title="Script Location Set!", message=f"Sanitizer Script Location Set To: {folderLocation}")
+    return folderLocation
+# GETTERS & SETTERS
 
 # SANITIZER -----
 def saveSanitizerScript(saveType="save"):
@@ -63,9 +81,9 @@ def saveSanitizerScript(saveType="save"):
     saveData = getSaveData()
     SANITIZER_FILE_CONTENT = getSanitizerParams()
     with open(saveData["selectedSanitizerScript"], 'w') as f:
-        f.write(SANITIZER_FILE_CONTENT.strip())
-    filenameLabel.configure(text=saveData["selectedSanitizerScript"].split('/')[-1])
-    filenameLabel.configure(state=tk.ACTIVE)
+        f.write(SANITIZER_FILE_CONTENT)
+    filenameLabelButton.configure(text=saveData["selectedSanitizerScript"].split('/')[-1])
+    filenameLabelButton.configure(state=tk.NORMAL)
     print("Sanitizer Saved")
 
 def createNewSanitizerScript():
@@ -76,7 +94,7 @@ def createNewSanitizerScript():
         defaultextension=".txt",filetypes=[("Text Documents","*.txt")])
     if sanitizerScriptFilepath.strip() == "": return
     setSaveData("selectedSanitizerScript", sanitizerScriptFilepath)
-    filenameLabel.configure(text=sanitizerScriptFilepath.split('/')[-1])
+    filenameLabelButton.configure(text=sanitizerScriptFilepath.split('/')[-1])
     with open(sanitizerScriptFilepath, 'w') as f:
         f.write("")
     clearParameterEntries()
@@ -98,6 +116,9 @@ def addParameterEntry(inputText, outputText):
     outputEntry = ctk.CTkEntry(master=rightParamFrame, font=ENTRY_BOX_FONT, width=100, height=30, justify=tk.CENTER)
     outputEntry.pack(padx=15,pady=5)
     outputEntry.insert(0, outputText)
+    for widget in (inputEntry, outputEntry):
+        widget.bind("<FocusIn>", resizer)
+        widget.bind("<FocusOut>", resizer)
     parameterWidgets.append((inputEntry, outputEntry))
 
 def removeParameterEntry():
@@ -112,36 +133,20 @@ def clearParameterEntries():
         widget[0].destroy()
         widget[1].destroy()
     parameterWidgets = []
-    print(parameterWidgets)
-
-def checkIfSaved(event:tk.Event=None):
-    saveData = getSaveData()
-    if not os.path.exists(saveData["selectedSanitizerScript"]): return
-    with open(saveData["selectedSanitizerScript"], 'r') as f:
-        if f.read().strip() != getSanitizerParams().strip():
-            filenameLabel.configure(state=tk.DISABLED)
-        else:
-            filenameLabel.configure(state=tk.ACTIVE)
-
 # SANITIZER -----
 
-
-# SETTINGS -----
-def setScriptsFolder():
-    saveData = getSaveData()
-    initDir = saveData["sanitizerScriptsLocation"].strip()
-    if initDir == "": initDir = os.getcwd()
-    folderLocation = filedialog.askdirectory(initialdir = initDir, title = "Select a Folder to Store Your Generated Scripts")
-    if folderLocation.strip() == "": return
-    setSaveData("sanitizerScriptsLocation", folderLocation)
-    messagebox.showinfo(title="Script Location Set!", message=f"Sanitizer Script Location Set To: {folderLocation}")
-    return folderLocation
-
+# WINDOWS -----
 def openSettingsWindow():
-    settingsWin = ctk.CTk()
+    global settingsWin
+    if settingsWin: settingsWin.focus_force(); return
+    def closeSettings():
+        global settingsWin
+        settingsWin.destroy()
+        settingsWin = None
+    settingsWin = ctk.CTkToplevel()
     settingsWin.title("Sanitizer Creator - Settings")
-    settingsWin.geometry("350x300")
-    settingsWin.grab_set()
+    settingsWin.geometry(f"350x300+{root.winfo_x()+int(rootW)}+{root.winfo_y()}")
+    settingsWin.focus_force()
     settingsFrame = ctk.CTkScrollableFrame(master=settingsWin, width=300, height=200, corner_radius=10)
     settingsFrame.pack(pady=5, padx=5, side=tk.TOP, fill=tk.X, expand=True)
     buttonFrame = ctk.CTkFrame(master=settingsWin)
@@ -152,106 +157,162 @@ def openSettingsWindow():
     scriptLocationFrame.pack(pady=5, padx=5, side=tk.TOP, fill=tk.X, expand=True)
     scriptLocationLabel = ctk.CTkLabel(master=scriptLocationFrame, text="Script Location:", font=SETTINGS_FONT)
     scriptLocationLabel.grid(row=0,column=0, padx=5, pady=5)
-    scriptLocationButton = ctk.CTkButton(master=scriptLocationFrame, text="Browse Folder Locations...", font=SETTINGS_FONT, command=setScriptsFolder)
+    scriptLocationButton = ctk.CTkButton(master=scriptLocationFrame, text="Browse For Folder Location...", font=SETTINGS_FONT, command=setScriptsFolder)
     scriptLocationButton.grid(row=0,column=1, padx=5, pady=5)
     # CLOSE
-    closeButton = ctk.CTkButton(master=buttonFrame, text="Close", font=LABEL_FONT, width=40, command=settingsWin.destroy)
+    closeButton = ctk.CTkButton(master=buttonFrame, text="Close", font=LABEL_FONT, width=40, command=closeSettings)
     closeButton.pack(padx=10, pady=10, anchor=tk.E, side=tk.RIGHT)
-    settingsWin.mainloop()
+
+def openPreviewWindow():
+    global scriptPreviewLabel
+    global previewWin
+    def closePreview():
+        global previewWin
+        previewWin.destroy()
+        previewWin = None
+    if previewWin: closePreview(); return
+    previewWin = ctk.CTkToplevel()
+    previewWin.title("Script Preview")
+    previewWin.geometry(f"200x280+{root.winfo_x()+int(rootW)}+{root.winfo_y()}")
+    previewWin.resizable(False, False)
+    previewWin.focus_force()
+    previewFrame = ctk.CTkScrollableFrame(master=previewWin, width=300, height=200, corner_radius=10)
+    previewFrame.pack(pady=5, padx=5, side=tk.TOP, fill=tk.X, expand=True)
+    buttonFrame = ctk.CTkFrame(master=previewWin)
+    buttonFrame.pack(pady=5, padx=5, side=tk.BOTTOM, fill=tk.X, expand=True)
+    # SETTINGS
+    scriptPreviewLabel = ctk.CTkLabel(master=previewFrame, text=getSanitizerParams(), font=LABEL_FONT, justify=tk.LEFT)
+    scriptPreviewLabel.grid(row=0,column=0, padx=5, pady=5)
+    # CLOSE
+    closeButton = ctk.CTkButton(master=buttonFrame, text="Close", font=LABEL_FONT, width=40, command=closePreview)
+    closeButton.pack(padx=5, pady=5, anchor=tk.E, side=tk.RIGHT)
+    previewWin.mainloop()
 # SETTINGS -----
 
-saveData = getSaveData()
-filenameText = "?"
-if saveData["selectedSanitizerScript"].strip() != "" and os.path.exists(saveData["selectedSanitizerScript"]):
-    filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
-if not os.path.exists(saveData["selectedSanitizerScript"]):
-    setSaveData("selectedSanitizerScript", "")
+# EVENTS
+def resizer(event):
+    if event.widget == event.widget.focus_get():
+        event.widget.configure(width=50)
+    else:
+        event.widget.configure(width=20)
 
-# WINDOW
-saveData = getSaveData()
-WINDOW_TITLE = "Sanitizer Creator"
-ENTRY_BOX_FONT = ("Roboto", 16)
-LABEL_FONT = ("Roboto", 15)
-SETTINGS_FONT = ("Roboto", 13)
+def checkIfSaved(event:tk.Event=None):
+    try:
+        scriptPreviewLabel.configure(text=getSanitizerParams())
+    except:
+        print("Script Preview Window isn't opened...")
+    saveData = getSaveData()
+    if not os.path.exists(saveData["selectedSanitizerScript"]): return
+    with open(saveData["selectedSanitizerScript"], 'r') as f:
+        filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
+        scriptContents = f.read().strip()
+        if scriptContents != getSanitizerParams() and filenameLabelButton.cget("text") == filenameText:
+            filenameLabelButton.configure(text=f"{filenameText} *")
+        elif scriptContents == getSanitizerParams() and filenameLabelButton.cget("text") == f"{filenameText} *":
+            filenameLabelButton.configure(text=filenameText)
+# EVENTS
 
-ctk.set_default_color_theme("blue")
-ctk.set_appearance_mode("dark")
-root = ctk.CTk()
-root.title(WINDOW_TITLE)
-root.geometry("325x425")
-root.resizable(False, False)
+def Start():
+    global saveData, filenameText
+    saveData = getSaveData()
+    filenameText = "?"
+    if saveData["selectedSanitizerScript"].strip() != "" and os.path.exists(saveData["selectedSanitizerScript"]):
+        filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
+    if not os.path.exists(saveData["selectedSanitizerScript"]):
+        setSaveData("selectedSanitizerScript", "")
+    saveData = getSaveData()
 
-# MENUBARS
-menubar = tk.Menu(root)
-fileMenu = tk.Menu(menubar, tearoff=0)
-fileMenu.add_command(label="New"+" "*21+"Ctrl+N", command=createNewSanitizerScript)
-root.bind('<Control-n>', createNewSanitizerScript)
-fileMenu.add_command(label="Open"+" "*20+"Ctrl+O", command=openSanitizerScript)
-root.bind('<Control-o>', openSanitizerScript)
-fileMenu.add_command(label="Save"+" "*22+"Ctrl+S", command=saveSanitizerScript)
-root.bind('<Control-s>', saveSanitizerScript)
-fileMenu.add_command(label="Save As...", command=lambda:saveSanitizerScript("saveAs"))
-fileMenu.add_separator()
-fileMenu.add_command(label="Exit", command=root.quit)
-editMenu = tk.Menu(menubar, tearoff=0)
-editMenu.add_command(label="Preferences", command=openSettingsWindow)
-helpMenu = tk.Menu(menubar, tearoff=0)
-helpMenu.add_command(label="Help Index")
-helpMenu.add_command(label="About...", command= lambda: webbrowser.open("https://github.com/Jeikobuka/Sanitizer-Creator"))
-menubar.add_cascade(label="File", menu=fileMenu)
-menubar.add_cascade(label="Edit", menu=editMenu)
-menubar.add_cascade(label="Help", menu=helpMenu)
-root.config(menu=menubar)
-root.bind("<KeyRelease>", checkIfSaved)
+def Main():
+    Start()
+    # WINDOW
+    global ENTRY_BOX_FONT, LABEL_FONT, SETTINGS_FONT, root, rootW, rootH, filenameLabelButton, leftParamFrame, rightParamFrame
+    WINDOW_TITLE = "Sanitizer Creator"
+    ENTRY_BOX_FONT = ("Roboto", 16)
+    LABEL_FONT = ("Roboto", 15)
+    SETTINGS_FONT = ("Roboto", 13)
 
-filenameFrame = ctk.CTkFrame(master=root, corner_radius=10)
-filenameFrame.pack(pady=5, padx=10)
+    rootW = "325"
+    rootH = "425"
+    ctk.set_default_color_theme("blue")
+    ctk.set_appearance_mode("dark")
+    root = ctk.CTk()
+    root.title(WINDOW_TITLE)
+    root.geometry(rootW+"x"+rootH)
+    root.resizable(False, False)
 
-filenameLabel = ctk.CTkButton(master=filenameFrame, text=filenameText, width=5, font=LABEL_FONT)
-filenameLabel.pack(pady=2, padx=2)
-filenameLabel.configure(state=tk.NORMAL)
-ToolTip(filenameLabel, msg="Currently opened file...", delay=0.1)
+    # MENUBARS
+    menubar = tk.Menu(root)
+    fileMenu = tk.Menu(menubar, tearoff=0)
+    fileMenu.add_command(label="New"+" "*21+"Ctrl+N", command=createNewSanitizerScript)
+    root.bind('<Control-n>', createNewSanitizerScript)
+    fileMenu.add_command(label="Open"+" "*20+"Ctrl+O", command=openSanitizerScript)
+    root.bind('<Control-o>', openSanitizerScript)
+    fileMenu.add_command(label="Save"+" "*22+"Ctrl+S", command=saveSanitizerScript)
+    root.bind('<Control-s>', saveSanitizerScript)
+    fileMenu.add_command(label="Save As...", command=lambda:saveSanitizerScript("saveAs"))
+    fileMenu.add_separator()
+    fileMenu.add_command(label="Exit", command=root.quit)
+    editMenu = tk.Menu(menubar, tearoff=0)
+    editMenu.add_command(label="Preferences", command=openSettingsWindow)
+    helpMenu = tk.Menu(menubar, tearoff=0)
+    helpMenu.add_command(label="Help Index")
+    helpMenu.add_command(label="About...", command= lambda: webbrowser.open("https://github.com/Jeikobuka/Sanitizer-Creator"))
+    menubar.add_cascade(label="File", menu=fileMenu)
+    menubar.add_cascade(label="Edit", menu=editMenu)
+    menubar.add_cascade(label="Help", menu=helpMenu)
+    root.config(menu=menubar)
+    root.bind("<KeyRelease>", checkIfSaved)
 
-parametersFrame = ctk.CTkScrollableFrame(master=root, width=300, height=275, corner_radius=10)
-parametersFrame.pack(pady=5, padx=15)
+    filenameFrame = ctk.CTkFrame(master=root, corner_radius=10)
+    filenameFrame.pack(pady=5, padx=10)
 
-# PARAMETER ENTRY FRAMES
-leftParamFrame = ctk.CTkFrame(master=parametersFrame, width=75)
-leftParamFrame.pack(side=tk.LEFT, fill=tk.Y, expand=True)
-rightParamFrame = ctk.CTkFrame(master=parametersFrame, width=75)
-rightParamFrame.pack(side=tk.RIGHT, fill=tk.Y, expand=True)
+    filenameLabelButton = ctk.CTkButton(master=filenameFrame, text=filenameText, width=5, font=LABEL_FONT, command=openPreviewWindow)
+    filenameLabelButton.pack(pady=2, padx=2)
+    filenameLabelButton.configure(state=tk.NORMAL)
+    ToolTip(filenameLabelButton, msg="Show preview of file...", delay=0.1)
 
-# LABEL FRAMES
-inputLabelFrame = ctk.CTkFrame(master=leftParamFrame, width=75, height=50, corner_radius=10)
-inputLabelFrame.pack(padx=15,pady=5)
-outputLabelFrame = ctk.CTkFrame(master=rightParamFrame, width=75, height=50, corner_radius=10)
-outputLabelFrame.pack(padx=15,pady=5)
+    parametersFrame = ctk.CTkScrollableFrame(master=root, width=300, height=275, corner_radius=10)
+    parametersFrame.pack(pady=5, padx=15)
 
-# LABELS
-setSanitizerParams(saveData["selectedSanitizerScript"])
-if not os.path.exists(saveData["selectedSanitizerScript"]):
-    addParameterEntry("","")
-inputLabel = ctk.CTkLabel(master=inputLabelFrame, text="Input", font=LABEL_FONT, width=75, height=30, justify=tk.CENTER).pack()
-outputLabel = ctk.CTkLabel(master=outputLabelFrame, text="Output", font=LABEL_FONT, width=75, height=30, justify=tk.CENTER).pack()
+    # PARAMETER ENTRY FRAMES
+    leftParamFrame = ctk.CTkFrame(master=parametersFrame, width=75)
+    leftParamFrame.pack(side=tk.LEFT, fill=tk.Y, expand=True)
+    rightParamFrame = ctk.CTkFrame(master=parametersFrame, width=75)
+    rightParamFrame.pack(side=tk.RIGHT, fill=tk.Y, expand=True)
 
-# PARAMETER ENTRIES
-controlsFrame = ctk.CTkFrame(master=root, height=20, corner_radius=10)
-controlsFrame.pack(pady=10, padx=15, fill=tk.BOTH, expand=True)
+    # LABEL FRAMES
+    inputLabelFrame = ctk.CTkFrame(master=leftParamFrame, width=75, height=50, corner_radius=10)
+    inputLabelFrame.pack(padx=15,pady=5)
+    outputLabelFrame = ctk.CTkFrame(master=rightParamFrame, width=75, height=50, corner_radius=10)
+    outputLabelFrame.pack(padx=15,pady=5)
 
-addParamImg = ctk.CTkImage(dark_image=Image.open("assets/add_sign.png"), size=(12,12))
-removeParamImg = ctk.CTkImage(dark_image=Image.open("assets/remove_sign.png"), size=(12,12))
+    # LABELS
+    setSanitizerParams(saveData["selectedSanitizerScript"])
+    if not os.path.exists(saveData["selectedSanitizerScript"]):
+        addParameterEntry("","")
+    inputLabel = ctk.CTkLabel(master=inputLabelFrame, text="Replace", font=LABEL_FONT, width=75, height=30, justify=tk.CENTER).pack()
+    outputLabel = ctk.CTkLabel(master=outputLabelFrame, text="With", font=LABEL_FONT, width=75, height=30, justify=tk.CENTER).pack()
 
-paramAddRemoveFrame = ctk.CTkFrame(master=controlsFrame)
-paramAddRemoveFrame.pack(padx=5,pady=5, fill=tk.Y, expand=True, side=tk.LEFT, anchor=tk.W)
+    # PARAMETER ENTRIES
+    controlsFrame = ctk.CTkFrame(master=root, height=20, corner_radius=10)
+    controlsFrame.pack(pady=10, padx=15, fill=tk.BOTH, expand=True)
 
-addParamRowButton = ctk.CTkButton(master=paramAddRemoveFrame, text="", image=addParamImg, width=10, height=20, command=lambda:addParameterEntry("",""))
-addParamRowButton.pack(padx=2, pady=2, side=tk.TOP)
-removeParamRowButton = ctk.CTkButton(master=paramAddRemoveFrame, text="", image=removeParamImg, width=10, height=20, command=removeParameterEntry)
-removeParamRowButton.pack(padx=2, pady=2, side=tk.BOTTOM)
-ToolTip(addParamRowButton, msg="Add Row of Parameters", delay=0.2)
-ToolTip(removeParamRowButton, msg="Remove Row of Parameters", delay=0.2)
+    addParamImg = ctk.CTkImage(dark_image=Image.open("assets/add_sign.png"), size=(12,12))
+    removeParamImg = ctk.CTkImage(dark_image=Image.open("assets/remove_sign.png"), size=(12,12))
 
-saveSanitizerButton = ctk.CTkButton(master=controlsFrame, text="Save Sanitizer", font=LABEL_FONT, width=75, height=30, command=saveSanitizerScript)
-saveSanitizerButton.pack(pady=10, padx=10, side=tk.RIGHT, anchor=tk.SE)
+    paramAddRemoveFrame = ctk.CTkFrame(master=controlsFrame)
+    paramAddRemoveFrame.pack(padx=5,pady=5, fill=tk.Y, expand=True, side=tk.LEFT, anchor=tk.W)
 
-root.mainloop()
+    addParamRowButton = ctk.CTkButton(master=paramAddRemoveFrame, text="", image=addParamImg, width=10, height=20, command=lambda:addParameterEntry("",""))
+    addParamRowButton.pack(padx=2, pady=2, side=tk.TOP)
+    removeParamRowButton = ctk.CTkButton(master=paramAddRemoveFrame, text="", image=removeParamImg, width=10, height=20, command=removeParameterEntry)
+    removeParamRowButton.pack(padx=2, pady=2, side=tk.BOTTOM)
+    ToolTip(addParamRowButton, msg="Add Row of Parameters", delay=0.2)
+    ToolTip(removeParamRowButton, msg="Remove Row of Parameters", delay=0.2)
+
+    saveSanitizerButton = ctk.CTkButton(master=controlsFrame, text="Save Sanitizer", font=LABEL_FONT, width=75, height=30, command=saveSanitizerScript)
+    saveSanitizerButton.pack(pady=10, padx=10, side=tk.RIGHT, anchor=tk.SE)
+
+    root.mainloop()
+
+Main()
