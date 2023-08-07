@@ -8,6 +8,7 @@ from PIL import Image
 import webbrowser, os, json
 
 settingsTemplate = {
+    "darkmode": True,
     "sanitizerScriptsLocation": "",
     "selectedSanitizerScript": ""
 }
@@ -16,25 +17,39 @@ settingsWin = None
 previewWin = None
 
 # GETTERS & SETTERS
+def log(msg):
+    with open('log.txt', 'a') as f:
+        f.write(msg)
+
+def compareFile():
+    saveData = getSaveData()
+    with open(saveData["selectedSanitizerScript"], 'r') as f:
+        scriptContents = f.read().strip()
+    return scriptContents == getSanitizerParams().strip()
+
 def getSaveData():
+    def createTemplate():
+        with open('settings.json', 'w') as f:
+            json.dump(settingsTemplate, f, indent=4)
+        data = getSaveData()
+        return data
+    if not os.path.exists('settings.json'):
+        createTemplate()
     try:
         with open('settings.json', 'r') as f:
             data = json.load(f)
         return data
     except (KeyError, json.JSONDecodeError) as e:
-        print("Caught a JSON Exception, resetting settings...\n"+str(e))
-        with open('settings.json', 'w') as f:
-            data = json.dump(settingsTemplate, f, indent=4)
-        with open('settings.json', 'r') as f:
-            data = json.load(f)
-        return data
+        log("Caught a JSON Exception, resetting settings...\n"+str(e))
+        saveData = createTemplate()
+        return saveData
 
 def setSaveData(k, v):
     saveData = getSaveData()
     saveData[k] = v
     with open('settings.json', 'w') as f:
         data = json.dump(saveData, f, indent=4)
-    print(f'Key: {k}\nValue: {v}\nSaved!')
+    log(f'Key: {k}\nValue: {v}\nJSON Saved!\n')
 
 def setSanitizerParams(fp):
     if not os.path.exists(fp): return
@@ -53,16 +68,6 @@ def getSanitizerParams():
         if inputEntry.strip() != "":
             SANITIZER_FILE_CONTENT += inputEntry + "->" + outputEntry + "\n"
     return SANITIZER_FILE_CONTENT.strip()
-
-def setScriptsFolder():
-    saveData = getSaveData()
-    initDir = saveData["sanitizerScriptsLocation"].strip()
-    if initDir == "": initDir = os.getcwd()
-    folderLocation = filedialog.askdirectory(initialdir = initDir, title = "Select a Folder to Store Your Generated Scripts")
-    if folderLocation.strip() == "": return
-    setSaveData("sanitizerScriptsLocation", folderLocation)
-    messagebox.showinfo(title="Script Location Set!", message=f"Sanitizer Script Location Set To: {folderLocation}")
-    return folderLocation
 # GETTERS & SETTERS
 
 # SANITIZER -----
@@ -70,8 +75,8 @@ def saveSanitizerScript(saveType="save"):
     saveData = getSaveData()
     initDir = saveData["sanitizerScriptsLocation"].strip()
     selectedScript = saveData["selectedSanitizerScript"].strip()
-    if selectedScript == "" or saveType=="saveAs":
-        if initDir == "": messagebox.showinfo(title="No Scripts Folder Location Found!", message="Set your preferred scripts folder location in 'Edit > Preferences'"); return
+    if not os.path.exists(selectedScript) or saveType=="saveAs":
+        if initDir.strip() == "": messagebox.showinfo(title="No Scripts Folder Location Found!", message="Set your preferred scripts folder location in 'Edit > Preferences'"); return
         sanitizerScriptFilepath = filedialog.asksaveasfilename(initialdir = initDir, title = "Save Sanitizer as Filename",
             defaultextension=".txt",filetypes=[("Text Documents","*.txt")])
         if sanitizerScriptFilepath.strip() == "": return
@@ -82,11 +87,13 @@ def saveSanitizerScript(saveType="save"):
     SANITIZER_FILE_CONTENT = getSanitizerParams()
     with open(saveData["selectedSanitizerScript"], 'w') as f:
         f.write(SANITIZER_FILE_CONTENT)
-    filenameLabelButton.configure(text=saveData["selectedSanitizerScript"].split('/')[-1])
-    filenameLabelButton.configure(state=tk.NORMAL)
-    print("Sanitizer Saved")
+    filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
+    if filenameLabelButton.cget("text") != filenameText:
+        filenameLabelButton.configure(text=filenameText)
 
 def createNewSanitizerScript():
+    saveClose = saveOnClose()
+    if saveClose == None: return
     saveData = getSaveData()
     initDir = saveData["sanitizerScriptsLocation"].strip()
     if initDir == "": messagebox.showinfo(title="No Scripts Folder Location Found!", message="Set your preferred scripts folder location in 'Edit > Preferences'"); return
@@ -101,6 +108,8 @@ def createNewSanitizerScript():
     addParameterEntry("","")
 
 def openSanitizerScript():
+    saveClose = saveOnClose()
+    if saveClose == None: return
     saveData = getSaveData()
     initDir = saveData["sanitizerScriptsLocation"].strip()
     if initDir == "": messagebox.showinfo(title="No Scripts Folder Location Found!", message="Set your preferred scripts folder location in 'Edit > Preferences'"); return
@@ -116,9 +125,6 @@ def addParameterEntry(inputText, outputText):
     outputEntry = ctk.CTkEntry(master=rightParamFrame, font=ENTRY_BOX_FONT, width=100, height=30, justify=tk.CENTER)
     outputEntry.pack(padx=15,pady=5)
     outputEntry.insert(0, outputText)
-    for widget in (inputEntry, outputEntry):
-        widget.bind("<FocusIn>", resizer)
-        widget.bind("<FocusOut>", resizer)
     parameterWidgets.append((inputEntry, outputEntry))
 
 def removeParameterEntry():
@@ -143,6 +149,21 @@ def openSettingsWindow():
         global settingsWin
         settingsWin.destroy()
         settingsWin = None
+    def setScriptsFolder():
+        saveData = getSaveData()
+        initDir = saveData["sanitizerScriptsLocation"].strip()
+        if initDir == "": initDir = os.getcwd()
+        folderLocation = filedialog.askdirectory(initialdir = initDir, title = "Select a Folder to Store Your Generated Scripts")
+        if folderLocation.strip() == "": return
+        setSaveData("sanitizerScriptsLocation", folderLocation)
+        messagebox.showinfo(title="Script Location Set!", message=f"Sanitizer Script Location Set To: {folderLocation}")
+        return folderLocation
+    def setDarkmode():
+        darkmode = darkModeCheckmark.get()
+        appearanceMode = "dark" if darkmode else "light"
+        ctk.set_appearance_mode(appearanceMode)
+        setSaveData("darkmode", darkmode)
+    saveData = getSaveData()
     settingsWin = ctk.CTkToplevel()
     settingsWin.title("Sanitizer Creator - Settings")
     settingsWin.geometry(f"350x300+{root.winfo_x()+int(rootW)}+{root.winfo_y()}")
@@ -159,6 +180,15 @@ def openSettingsWindow():
     scriptLocationLabel.grid(row=0,column=0, padx=5, pady=5)
     scriptLocationButton = ctk.CTkButton(master=scriptLocationFrame, text="Browse For Folder Location...", font=SETTINGS_FONT, command=setScriptsFolder)
     scriptLocationButton.grid(row=0,column=1, padx=5, pady=5)
+    ToolTip(scriptLocationButton, msg='"'+saveData['sanitizerScriptsLocation']+'"', delay=0.15, )
+
+    darkModeFrame = ctk.CTkFrame(master=settingsFrame)
+    darkModeFrame.pack(pady=5, padx=5, side=tk.TOP, fill=tk.X, expand=True)
+    darkModeLabel = ctk.CTkLabel(master=darkModeFrame, text="Dark Mode:", font=SETTINGS_FONT)
+    darkModeLabel.grid(row=1,column=0, padx=5, pady=5)
+    darkModeCheckmark = ctk.CTkCheckBox(master=darkModeFrame, text="", onvalue=True, offvalue=False, command=setDarkmode)
+    darkModeCheckmark.grid(row=1,column=1, padx=5, pady=5)
+    darkModeCheckmark.select() if saveData["darkmode"] else darkModeCheckmark.deselect()
     # CLOSE
     closeButton = ctk.CTkButton(master=buttonFrame, text="Close", font=LABEL_FONT, width=40, command=closeSettings)
     closeButton.pack(padx=10, pady=10, anchor=tk.E, side=tk.RIGHT)
@@ -190,26 +220,42 @@ def openPreviewWindow():
 # SETTINGS -----
 
 # EVENTS
-def resizer(event):
-    if event.widget == event.widget.focus_get():
-        event.widget.configure(width=50)
-    else:
-        event.widget.configure(width=20)
+def close():
+    saveClose = saveOnClose()
+    if saveClose != None:
+        root.destroy()
 
-def checkIfSaved(event:tk.Event=None):
+def saveOnClose():
+    saveData = getSaveData()
+    if not os.path.exists(saveData["selectedSanitizerScript"]): return True
+    filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
+    fileIsOrig = compareFile()
+    if fileIsOrig==False:
+        yesNoCancel = messagebox.askyesnocancel("You have unsaved changes", f'Do you want to save the changes made to "{filenameText}"?')
+        if yesNoCancel == True: # CLICKED YES
+            saveSanitizerScript()
+            return True
+        elif yesNoCancel == False: # CLICKED NO
+            return False
+        else: # CLICKED CANCEL
+            return None
+    elif fileIsOrig==True:
+        return True
+
+def checkIfFileChanged(event:tk.Event=None):
     try:
         scriptPreviewLabel.configure(text=getSanitizerParams())
     except:
-        print("Script Preview Window isn't opened...")
+        pass
     saveData = getSaveData()
     if not os.path.exists(saveData["selectedSanitizerScript"]): return
-    with open(saveData["selectedSanitizerScript"], 'r') as f:
-        filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
-        scriptContents = f.read().strip()
-        if scriptContents != getSanitizerParams() and filenameLabelButton.cget("text") == filenameText:
-            filenameLabelButton.configure(text=f"{filenameText} *")
-        elif scriptContents == getSanitizerParams() and filenameLabelButton.cget("text") == f"{filenameText} *":
-            filenameLabelButton.configure(text=filenameText)
+    filenameText = saveData["selectedSanitizerScript"].split('/')[-1]
+    fileIsOrig = compareFile()
+    if fileIsOrig == True and filenameLabelButton.cget("text") == filenameText+' *': 
+        filenameLabelButton.configure(text=filenameText)
+    elif fileIsOrig == False and filenameLabelButton.cget("text") == filenameText:
+        filenameLabelButton.configure(text=f"{filenameText} *")
+        
 # EVENTS
 
 def Start():
@@ -233,8 +279,10 @@ def Main():
 
     rootW = "325"
     rootH = "425"
+    saveData = getSaveData()
+    appearanceMode = "dark" if saveData["darkmode"] else "light"
     ctk.set_default_color_theme("blue")
-    ctk.set_appearance_mode("dark")
+    ctk.set_appearance_mode(appearanceMode)
     root = ctk.CTk()
     root.title(WINDOW_TITLE)
     root.geometry(rootW+"x"+rootH)
@@ -251,7 +299,7 @@ def Main():
     root.bind('<Control-s>', saveSanitizerScript)
     fileMenu.add_command(label="Save As...", command=lambda:saveSanitizerScript("saveAs"))
     fileMenu.add_separator()
-    fileMenu.add_command(label="Exit", command=root.quit)
+    fileMenu.add_command(label="Exit", command=close)
     editMenu = tk.Menu(menubar, tearoff=0)
     editMenu.add_command(label="Preferences", command=openSettingsWindow)
     helpMenu = tk.Menu(menubar, tearoff=0)
@@ -261,14 +309,13 @@ def Main():
     menubar.add_cascade(label="Edit", menu=editMenu)
     menubar.add_cascade(label="Help", menu=helpMenu)
     root.config(menu=menubar)
-    root.bind("<KeyRelease>", checkIfSaved)
+    root.bind("<KeyRelease>", checkIfFileChanged)
 
-    filenameFrame = ctk.CTkFrame(master=root, corner_radius=10)
+    filenameFrame = ctk.CTkFrame(master=root, corner_radius=5)
     filenameFrame.pack(pady=5, padx=10)
 
-    filenameLabelButton = ctk.CTkButton(master=filenameFrame, text=filenameText, width=5, font=LABEL_FONT, command=openPreviewWindow)
+    filenameLabelButton = ctk.CTkButton(master=filenameFrame, text=filenameText, width=20, font=("Roboto", 15, "bold"), corner_radius=5, command=openPreviewWindow)
     filenameLabelButton.pack(pady=2, padx=2)
-    filenameLabelButton.configure(state=tk.NORMAL)
     ToolTip(filenameLabelButton, msg="Show preview of file...", delay=0.1)
 
     parametersFrame = ctk.CTkScrollableFrame(master=root, width=300, height=275, corner_radius=10)
@@ -307,12 +354,12 @@ def Main():
     addParamRowButton.pack(padx=2, pady=2, side=tk.TOP)
     removeParamRowButton = ctk.CTkButton(master=paramAddRemoveFrame, text="", image=removeParamImg, width=10, height=20, command=removeParameterEntry)
     removeParamRowButton.pack(padx=2, pady=2, side=tk.BOTTOM)
-    ToolTip(addParamRowButton, msg="Add Row of Parameters", delay=0.2)
-    ToolTip(removeParamRowButton, msg="Remove Row of Parameters", delay=0.2)
-
+    ToolTip(addParamRowButton, msg="Add Row of Parameters", delay=0.15)
+    ToolTip(removeParamRowButton, msg="Remove Row of Parameters", delay=0.15)
     saveSanitizerButton = ctk.CTkButton(master=controlsFrame, text="Save Sanitizer", font=LABEL_FONT, width=75, height=30, command=saveSanitizerScript)
     saveSanitizerButton.pack(pady=10, padx=10, side=tk.RIGHT, anchor=tk.SE)
 
+    root.protocol("WM_DELETE_WINDOW", close)
     root.mainloop()
 
 Main()
