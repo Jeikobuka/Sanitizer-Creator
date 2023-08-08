@@ -157,6 +157,7 @@ def openSettingsWindow():
         if folderLocation.strip() == "": return
         setSaveData("sanitizerScriptsLocation", folderLocation)
         messagebox.showinfo(title="Script Location Set!", message=f"Sanitizer Script Location Set To: {folderLocation}")
+        scriptLocationTT.msg = "'"+folderLocation+"'"
         return folderLocation
     def setDarkmode():
         darkmode = darkModeCheckmark.get()
@@ -180,7 +181,7 @@ def openSettingsWindow():
     scriptLocationLabel.grid(row=0,column=0, padx=5, pady=5)
     scriptLocationButton = ctk.CTkButton(master=scriptLocationFrame, text="Browse For Folder Location...", font=SETTINGS_FONT, command=setScriptsFolder)
     scriptLocationButton.grid(row=0,column=1, padx=5, pady=5)
-    ToolTip(scriptLocationButton, msg='"'+saveData['sanitizerScriptsLocation']+'"', delay=0.15, )
+    scriptLocationTT = ToolTip(scriptLocationButton, msg='"'+saveData['sanitizerScriptsLocation']+'"', delay=0.15, )
 
     darkModeFrame = ctk.CTkFrame(master=settingsFrame)
     darkModeFrame.pack(pady=5, padx=5, side=tk.TOP, fill=tk.X, expand=True)
