@@ -1,0 +1,1 @@
+pyinstaller --noconfirm --onefile --noconsole --add-data "c:/users/adam/appdata/local/programs/python/python310/lib/site-packages/customtkinter;customtkinter/"  "sanitizer-creator.py"
